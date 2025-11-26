@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Panel de Leads – Platzi</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- PapaParse para leer CSV en el navegador -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7fb;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.2rem;
+    }
+    .subtitle {
+      font-size: 0.9rem;
+      color: #555;
+      margin-bottom: 1rem;
+    }
+    .panel, .ficha {
+      background: #fff;
+      border-radius: 10px;
+      padding: 16px 18px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+    }
+    label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #333;
+    }
+    input[type="file"], select, button {
+      font-size: 0.9rem;
+    }
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      margin-top: 6px;
+    }
+    button {
+      margin-top: 8px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      background: #00b894;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: default;
+    }
+    .pill {
+      display: inline-block;
+      background: #e5f0ff;
+      color: #2453a6;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      margin-right: 4px;
+      margin-bottom: 4px;
+    }
+    .section-title {
+      font-size: 0.95rem;
+      margin-top: 14px;
+      margin-bottom: 6px;
+      color: #003366;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .contact-card {
+      border-left: 3px solid #003366;
+      padding-left: 8px;
+      margin-bottom: 8px;
+      font-size: 0.85rem;
+    }
+    .muted {
+      color: #666;
+      font-size: 0.8rem;
+    }
+    a {
+      color: #0057d9;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Platzi · Panel de Leads Educativos</h1>
+    <div class="subtitle">
+      Sube un CSV de Apollo y genera fichas Big Data de colegios y contactos (todo en tu navegador).
+    </div>
+
+    <div class="panel">
+      <label for="fileInput">1. Subir archivo de Apollo (.csv)</label><br/>
+      <input type="file" id="fileInput" accept=".csv" />
+      <br/>
+      <button id="processBtn">Procesar archivo</button>
+      <div id="status" class="muted"></div>
+    </div>
+
+    <div class="panel">
+      <label for="schoolSelect">2. Selecciona un colegio</label>
+      <select id="schoolSelect">
+        <option value="">-- Aún no hay datos --</option>
+      </select>
+    </div>
+
+    <div id="fichaContainer" class="ficha" style="display:none;"></div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const processBtn = document.getElementById("processBtn");
+    const statusEl = document.getElementById("status");
+    const schoolSelect = document.getElementById("schoolSelect");
+    const fichaContainer = document.getElementById("fichaContainer");
+
+    let groupedByCompany = {}; // { companyName: [rows...] }
+
+    processBtn.addEventListener("click", () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        alert("Selecciona un archivo CSV de Apollo primero.");
+        return;
+      }
+      statusEl.textContent = "Procesando archivo...";
+      groupedByCompany = {};
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          const rows = results.data;
+          rows.forEach(row => {
+            const company = row["Company Name"] || row["Company"] || "SIN NOMBRE DE COLEGIO";
+            if (!groupedByCompany[company]) {
+              groupedByCompany[company] = [];
+            }
+            groupedByCompany[company].push(row);
+          });
+
+          const companies = Object.keys(groupedByCompany).sort();
+          schoolSelect.innerHTML = "";
+          if (!companies.length) {
+            schoolSelect.innerHTML = '<option value="">-- No se detectaron colegios --</option>';
+            statusEl.textContent = "No se detectaron registros válidos.";
+            return;
+          }
+          schoolSelect.innerHTML = '<option value="">-- Selecciona un colegio --</option>';
+          companies.forEach(name => {
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            schoolSelect.appendChild(opt);
+          });
+          statusEl.textContent = `Procesado. Colegios detectados: ${companies.length}`;
+        },
+        error: function(err) {
+          console.error(err);
+          statusEl.textContent = "Error al leer el archivo.";
+        }
+      });
+    });
+
+    schoolSelect.addEventListener("change", () => {
+      const company = schoolSelect.value;
+      if (!company) {
+        fichaContainer.style.display = "none";
+        fichaContainer.innerHTML = "";
+        return;
+      }
+      const rows = groupedByCompany[company];
+      if (!rows || !rows.length) return;
+      const fichaData = buildFichaData(company, rows);
+      renderFicha(fichaData);
+    });
+
+    function buildFichaData(companyName, rows) {
+      const first = rows[0] || {};
+      const city = first["City"] || "";
+      const country = first["Country"] || "";
+      const website = first["Website"] || "";
+      const industry = first["Industry"] || "";
+      const companyPhone = first["Company Phone"] || first["Corporate Phone"] || "";
+      const employees = first["# Employees"] || first["# Employees "];
+      const keywords = first["Keywords"] || "";
+
+      // Cluster / segmento heurístico
+      const cluster = [];
+      const notasModelo = [];
+
+      const indLower = (industry || "").toLowerCase();
+      const kwLower = (keywords || "").toLowerCase();
+      let segmento = "GENERAL";
+
+      if (indLower.includes("primary/secondary education") || indLower.includes("education")) {
+        cluster.push("Education_K12");
+      }
+      if (kwLower.includes("bilingual") || kwLower.includes("bilingüe") || kwLower.includes("english")) {
+        cluster.push("Bilingual_English_Focus");
+      }
+      if (kwLower.includes("ib") || kwLower.includes("international baccalaureate")) {
+        cluster.push("IB_International");
+      }
+      let empNum = null;
+      if (employees && !isNaN(parseInt(employees))) {
+        empNum = parseInt(employees);
+        if (empNum > 1000) {
+          cluster.push("Large_Organization");
+          segmento = "High_Potential_Large";
+        } else if (empNum > 200) {
+          cluster.push("Mid_Size");
+          segmento = "Mid_Size_Education";
+        } else {
+          cluster.push("Small_Medium");
+        }
+      }
+
+      if (cluster.length === 0) {
+        cluster.push("AUTO_GENERATED_PLACEHOLDER");
+      }
+
+      notasModelo.push("Ficha generada automáticamente a partir de datos de Apollo.");
+      if (industry) {
+        notasModelo.push("Industry detectado: " + industry);
+      }
+      if (employees) {
+        notasModelo.push("Número de empleados reportado: " + employees);
+      }
+
+      // Contactos
+      const contactos = rows.map(r => {
+        const nombre = `${r["First Name"] || ""} ${r["Last Name"] || ""}`.trim();
+        const rol = r["Title"] || "";
+        const email = r["Email"] || "";
+        const mob = r["Mobile Phone"] || "";
+        const corpPhone = r["Corporate Phone"] || "";
+        const linkedin = r["Person Linkedin Url"] || "";
+        const tipoScore = scoreRol(rol);
+        return {
+          nombre,
+          rol,
+          email,
+          telefonoMovil: mob,
+          telefonoCorporativo: corpPhone,
+          linkedin,
+          scoreInfluencia: tipoScore.score,
+          tipo: tipoScore.tipo
+        };
+      }).sort((a, b) => b.scoreInfluencia - a.scoreInfluencia);
+
+      const playbook = {
+        pasos: [
+          "Paso 1: Contactar primero al decisor con mayor score de influencia (tipo: decisor).",
+          "Paso 2: Poner en copia a 1–2 contactos tipo 'agendador' (admissions / marketing / coordinación).",
+          "Paso 3: Si no hay respuesta en 3–5 días, hacer follow-up por correo o teléfono corporativo.",
+          "Paso 4: Proponer reunión corta (20–30 minutos) con foco en beneficios concretos para el colegio."
+        ]
+      };
+
+      return {
+        colegio: {
+          nombreColegio: companyName,
+          ciudad: city,
+          pais: country,
+          web: website,
+          telefono: companyPhone,
+          industry,
+          employees
+        },
+        modelo: { segmento, cluster, notasModelo },
+        contactos,
+        playbook
+      };
+    }
+
+    function scoreRol(rol) {
+      const r = (rol || "").toLowerCase();
+      let score = 0.75;
+      let tipo = "aliado";
+
+      if (
+        r.includes("rector") ||
+        r.includes("head of school") ||
+        r.includes("headmaster") ||
+        r.includes("director") ||
+        r.includes("principal")
+      ) {
+        score = 0.95;
+        tipo = "decisor";
+      } else if (
+        r.includes("admissions") ||
+        r.includes("marketing") ||
+        r.includes("coordinator") ||
+        r.includes("coordinador") ||
+        r.includes("coordinadora")
+      ) {
+        score = 0.88;
+        tipo = "agendador";
+      } else if (
+        r.includes("assistant") ||
+        r.includes("asistente") ||
+        r.includes("secretary") ||
+        r.includes("secretaria")
+      ) {
+        score = 0.7;
+        tipo = "soporte";
+      }
+      return { score, tipo };
+    }
+
+    function renderFicha(data) {
+      const { colegio, modelo, contactos, playbook } = data;
+
+      const clusterHTML = (modelo.cluster || [])
+        .map(c => `<span class="pill">${c}</span>`)
+        .join("");
+
+      const notasHTML = (modelo.notasModelo || [])
+        .map(n => `<div class="muted">• ${n}</div>`)
+        .join("");
+
+      const contactosHTML = (contactos || [])
+        .map(c => `
+          <div class="contact-card">
+            <b>${c.nombre || "(sin nombre)"}</b> – ${c.rol || "(sin cargo)"}<br/>
+            <span class="muted">Tipo: ${c.tipo} · Score influencia: ${(c.scoreInfluencia * 100).toFixed(0)}/100</span><br/>
+            ${c.email ? `Email: <a href="mailto:${c.email}">${c.email}</a><br/>` : ""}
+            ${c.telefonoMovil ? `Móvil: ${c.telefonoMovil}<br/>` : ""}
+            ${c.telefonoCorporativo ? `Tel. corporativo: ${c.telefonoCorporativo}<br/>` : ""}
+            ${c.linkedin ? `LinkedIn: <a href="${c.linkedin}" target="_blank">${c.linkedin}</a><br/>` : ""}
+          </div>
+        `)
+        .join("");
+
+      const playbookHTML = (playbook.pasos || [])
+        .map(p => `<div>• ${p}</div>`)
+        .join("");
+
+      fichaContainer.innerHTML = `
+        <h2>${colegio.nombreColegio}</h2>
+        <div class="muted">
+          ${colegio.ciudad || ""}${colegio.pais ? " · " + colegio.pais : ""}
+        </div>
+
+        <div class="section-title">Información general</div>
+        <div>
+          ${colegio.web ? `Web: <a href="${colegio.web}" target="_blank">${colegio.web}</a><br/>` : ""}
+          ${colegio.telefono ? `Teléfono: ${colegio.telefono}<br/>` : ""}
+          ${colegio.industry ? `Industry: ${colegio.industry}<br/>` : ""}
+          ${colegio.employees ? `# Empleados (Apollo): ${colegio.employees}<br/>` : ""}
+        </div>
+
+        <div class="section-title">Cluster / modelo (Big Data local)</div>
+        <div>${clusterHTML}</div>
+        ${notasHTML}
+
+        <div class="section-title">Contactos clave (Apollo)</div>
+        ${contactosHTML || "<div class='muted'>No hay contactos procesados.</div>"}
+
+        <div class="section-title">Playbook de contacto</div>
+        ${playbookHTML || "<div class='muted'>Playbook genérico.</div>"}
+
+        <div class="section-title">Notas</div>
+        <div class="muted">
+          Esta ficha se generó automáticamente en tu navegador,
+          a partir del CSV de Apollo. Para un enriquecimiento real con IA + web
+          se requeriría un backend seguro (no se implementa en esta versión).
+        </div>
+      `;
+
+      fichaContainer.style.display = "block";
+    }
+  </script>
+</body>
+</html>
